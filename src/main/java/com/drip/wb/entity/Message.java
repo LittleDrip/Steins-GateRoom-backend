@@ -11,5 +11,6 @@ public class Message {
     private String type;
     private String name;
     private String time;
+    private String avatar;
     private String msg;
 }

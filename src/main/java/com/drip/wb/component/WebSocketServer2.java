@@ -14,16 +14,19 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 
 @Component
-@ServerEndpoint("/socket/{room}/{username}/{avatar}")
-public class WebSocketServer {
+@ServerEndpoint("/socket2/{room}/{username}/{avatar}")
+public class WebSocketServer2 {
     /**
      * 存储各个房间的 sessionMap  第一个string是房间id，第二个map是用户类和session
      */
     public static final Map<String, Map<User, Session>> rooms = new ConcurrentHashMap<>();
-
+    // 用于同步歌曲切换操作的锁
+    private static final Lock songChangeLock = new ReentrantLock();
     /***
      * WebSocket 建立连接事件
      */
@@ -33,13 +36,8 @@ public class WebSocketServer {
         Map<User, Session> sessionMap = rooms.get(room);
         User user = new User(username, avatar,room);
         if (!sessionMap.containsKey(user)) {
-            System.out.println(username + "进入了房间 " + room);
-            Message msg=new Message();
-            msg.setType("portalMsg");
-            msg.setMsg("【"+username+"】" + "进入了房间");
             sessionMap.put(user, session);
-            sendAllMessage(setUserList(sessionMap), room);
-            sendAllMessage(JSON.toJSONString(msg), room);
+            setUserList(sessionMap);
             showUserList(sessionMap, room);
         }
     }
@@ -65,13 +63,9 @@ public class WebSocketServer {
             }
 
             if (userToRemove != null) {
-                System.out.println(username + "退出了房间 " + room);
-                Message msg = new Message();
-                msg.setType("portalMsg");
-                msg.setMsg("【"+username+"】"+ "离开了房间");
+//                sessionMap.remove(userToRemove);
                 Session session = sessionMap.remove(userToRemove);
-                sendAllMessage(JSON.toJSONString(msg), room);
-                sendAllMessage(setUserList(sessionMap), room);
+                setUserList(sessionMap);
                 showUserList(sessionMap, room);
                 if (session != null) {
                     session.close();
@@ -86,17 +80,29 @@ public class WebSocketServer {
      * @param message 信息
      */
     @OnMessage
-    public void onMessage(String message, @PathParam("room") String room) {
+    public void onMessage(String message, @PathParam("room") String room,@PathParam("username") String username) {
         try {
             JSONObject jsonMessage = JSON.parseObject(message);
-            if (jsonMessage.containsKey("type") && "musicInfo".equals(jsonMessage.getString("type"))) {
-                System.out.println("zhixing!!!!!!!!!!!!!!");
-                // 处理音乐信息
-                handleMusicInfo(message, room, jsonMessage.getString("user"));
-            }else {
-                // 处理普通消息
-                Message msg = JSON.parseObject(message, Message.class);
-                sendAllMessage(JSON.toJSONString(msg), room);
+
+            if (jsonMessage.containsKey("type")) {
+                String type = jsonMessage.getString("type");
+
+                // 对歌曲切换操作加锁
+                songChangeLock.lock();
+                try {
+                    if ("nextSong".equals(type)) {
+                        System.out.println("下一首歌曲！");
+                        sendAllMessage(message, room);
+                    } else if ("prevSong".equals(type)) {
+                        System.out.println("上一首歌曲！");
+                        sendAllMessage(message, room);
+                    }else if("playStateChange".equals(type)){
+                        System.out.println("播放/暂停歌曲！");
+                        sendAllMessageExceptSelf(message, room,username);
+                    }
+                } finally {
+                    songChangeLock.unlock();  // 确保在处理完毕后释放锁
+                }
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -157,6 +163,23 @@ public class WebSocketServer {
             e.printStackTrace();
         }
     }
+    private void sendAllMessageExceptSelf(String message, String room, String username) {
+        try {
+            Map<User, Session> sessionMap = rooms.get(room);
+            if (sessionMap != null) {
+                for (Map.Entry<User, Session> entry : sessionMap.entrySet()) {
+                    // 排除掉发送消息的用户
+                    if (!entry.getKey().getUsername().equals(username)) {
+                        entry.getValue().getBasicRemote().sendText(message);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+
 //    -----------------------------------------------
 
 
