@@ -33,14 +33,14 @@ public class WebSocketServer {
         Map<User, Session> sessionMap = rooms.get(room);
         User user = new User(username, avatar,room);
         if (!sessionMap.containsKey(user)) {
-            System.out.println(username + "进入了房间 " + room);
+//            System.out.println(username + "进入了房间 " + room);
             Message msg=new Message();
             msg.setType("portalMsg");
             msg.setMsg("【"+username+"】" + "进入了房间");
             sessionMap.put(user, session);
             sendAllMessage(setUserList(sessionMap), room);
             sendAllMessage(JSON.toJSONString(msg), room);
-            showUserList(sessionMap, room);
+//            showUserList(sessionMap, room);
         }
     }
 
@@ -65,14 +65,14 @@ public class WebSocketServer {
             }
 
             if (userToRemove != null) {
-                System.out.println(username + "退出了房间 " + room);
+//                System.out.println(username + "退出了房间 " + room);
                 Message msg = new Message();
                 msg.setType("portalMsg");
                 msg.setMsg("【"+username+"】"+ "离开了房间");
                 Session session = sessionMap.remove(userToRemove);
                 sendAllMessage(JSON.toJSONString(msg), room);
                 sendAllMessage(setUserList(sessionMap), room);
-                showUserList(sessionMap, room);
+//                showUserList(sessionMap, room);
                 if (session != null) {
                     session.close();
                 }
@@ -86,13 +86,13 @@ public class WebSocketServer {
      * @param message 信息
      */
     @OnMessage
-    public void onMessage(String message, @PathParam("room") String room) {
+    public void onMessage(String message, @PathParam("room") String room, @PathParam("username") String username) {
         try {
             JSONObject jsonMessage = JSON.parseObject(message);
             if (jsonMessage.containsKey("type") && "musicInfo".equals(jsonMessage.getString("type"))) {
-                System.out.println("zhixing!!!!!!!!!!!!!!");
+//                System.out.println("zhixing!!!!!!!!!!!!!!");
                 // 处理音乐信息
-                handleMusicInfo(message, room, jsonMessage.getString("user"));
+                handleMusicInfo(message, room, jsonMessage.getString("user"),username);
             }else {
                 // 处理普通消息
                 Message msg = JSON.parseObject(message, Message.class);
@@ -138,7 +138,7 @@ public class WebSocketServer {
         List<User> list = new ArrayList<>(sessionMap.keySet());
         UserList userList = new UserList();
         userList.setUserlist(list);
-        System.out.println(JSON.toJSONString(userList)); //日志
+//        System.out.println(JSON.toJSONString(userList)); //日志
         return JSON.toJSONString(userList);
     }
     /**
@@ -159,15 +159,29 @@ public class WebSocketServer {
     }
 //    -----------------------------------------------
 
+    private void sendAllMessageExceptSelf(String message, String room, String username) {
+        try {
+            Map<User, Session> sessionMap = rooms.get(room);
+            if (sessionMap != null) {
+                for (Map.Entry<User, Session> entry : sessionMap.entrySet()) {
+                    // 排除掉发送消息的用户
+                    if (!entry.getKey().getUsername().equals(username)) {
+                        entry.getValue().getBasicRemote().sendText(message);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
 
 
-    private void handleMusicInfo(String message, String room, String newUser) {
+    private void handleMusicInfo(String message, String room, String newUser,String username) {
         try {
             Map<User, Session> sessionMap = rooms.get(room);
             if (sessionMap != null) {
                 for (User user : sessionMap.keySet()) {
-                    System.out.println("user.getUsername() = " + user.getUsername());
-                    if (user.getUsername().equals(newUser)) {
+                    if (user.getUsername().equals(newUser)&& !username.equals(newUser)) {
                         System.out.println("发送");
                         Session session = sessionMap.get(user);
                         session.getBasicRemote().sendText(message);
