@@ -12,6 +12,7 @@ import jakarta.websocket.server.ServerEndpoint;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.net.Socket;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -23,6 +24,8 @@ public class WebSocketServer {
      * 存储各个房间的 sessionMap  第一个string是房间id，第二个map是用户类和session
      */
     public static final Map<String, Map<User, Session>> rooms = new ConcurrentHashMap<>();
+    private static final Map<Session, Long> heartbeatTracker = new ConcurrentHashMap<>();
+    private static final long HEARTBEAT_TIMEOUT = 15000; // 心跳超时时间，15秒
 
     /***
      * WebSocket 建立连接事件
@@ -42,6 +45,8 @@ public class WebSocketServer {
             sendAllMessage(JSON.toJSONString(msg), room);
 //            showUserList(sessionMap, room);
         }
+        // 初始化心跳时间
+        heartbeatTracker.put(session, System.currentTimeMillis());
     }
 
 
@@ -74,6 +79,7 @@ public class WebSocketServer {
                 sendAllMessage(setUserList(sessionMap), room);
 //                showUserList(sessionMap, room);
                 if (session != null) {
+                    heartbeatTracker.remove(session); // 清理心跳跟踪
                     session.close();
                 }
             }
@@ -86,14 +92,22 @@ public class WebSocketServer {
      * @param message 信息
      */
     @OnMessage
-    public void onMessage(String message, @PathParam("room") String room, @PathParam("username") String username) {
+    public void onMessage(String message, @PathParam("room") String room, @PathParam("username") String username,Session session) {
         try {
             JSONObject jsonMessage = JSON.parseObject(message);
+            // 处理心跳消息
+            if ("heartbeat".equals(jsonMessage.getString("type"))) {
+                heartbeatTracker.put(session, System.currentTimeMillis());
+//                System.out.println("心跳");
+                return; // 不继续处理其他消息
+            }
             if (jsonMessage.containsKey("type") && "musicInfo".equals(jsonMessage.getString("type"))) {
 //                System.out.println("zhixing!!!!!!!!!!!!!!");
                 // 处理音乐信息
                 handleMusicInfo(message, room, jsonMessage.getString("user"),username);
-            }else {
+            }
+
+            else {
                 // 处理普通消息
                 Message msg = JSON.parseObject(message, Message.class);
                 sendAllMessage(JSON.toJSONString(msg), room);
