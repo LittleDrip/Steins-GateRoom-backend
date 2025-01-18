@@ -98,15 +98,22 @@ public class WebSocketServer {
             // 处理心跳消息
             if ("heartbeat".equals(jsonMessage.getString("type"))) {
                 heartbeatTracker.put(session, System.currentTimeMillis());
-//                System.out.println("心跳");
                 return; // 不继续处理其他消息
             }
+            // 处理踢人消息
+            if ("kick".equals(jsonMessage.getString("type"))) {
+                handleKickUser(jsonMessage, room);
+                return;
+            }
+            // 处理点歌消息
+            if ("requestSong".equals(jsonMessage.getString("type"))) {
+                handleRequestSong(jsonMessage, room, username);
+                return;
+            }
             if (jsonMessage.containsKey("type") && "musicInfo".equals(jsonMessage.getString("type"))) {
-//                System.out.println("zhixing!!!!!!!!!!!!!!");
                 // 处理音乐信息
                 handleMusicInfo(message, room, jsonMessage.getString("user"),username);
             }
-
             else {
                 // 处理普通消息
                 Message msg = JSON.parseObject(message, Message.class);
@@ -117,6 +124,76 @@ public class WebSocketServer {
         }
     }
 
+    /**
+     * 处理踢人消息
+     * @param jsonMessage 消息内容
+     * @param room 房间号
+     */
+    private void handleKickUser(JSONObject jsonMessage, String room) {
+        String kickedUsername = jsonMessage.getString("kickedUser");
+        Map<User, Session> sessionMap = rooms.get(room);
+
+        if (sessionMap != null && kickedUsername != null) {
+            User kickedUser = null;
+            for (User user : sessionMap.keySet()) {
+                if (user.getUsername().equals(kickedUsername)) {
+                    kickedUser = user;
+                    break;
+                }
+            }
+
+            if (kickedUser != null) {
+                try {
+                    Session kickedSession = sessionMap.get(kickedUser);
+                    if (kickedSession != null) {
+                        // 发送被踢消息给被踢用户
+                        JSONObject kickMessage = new JSONObject();
+                        kickMessage.put("type", "kick");
+                        kickMessage.put("kickedUser", kickedUsername);
+                        kickedSession.getBasicRemote().sendText(JSON.toJSONString(kickMessage));
+
+                        // 发送系统消息给所有用户
+                        Message systemMsg = new Message();
+                        systemMsg.setType("portalMsg");
+                        systemMsg.setMsg("【系统消息】用户 " + kickedUsername + " 被移出房间");
+                        sendAllMessage(JSON.toJSONString(systemMsg), room);
+
+                        // 关闭被踢用户的连接
+                        kickedSession.close();
+                    }
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    }
+
+    /**
+     * 处理点歌消息
+     * @param jsonMessage 消息内容
+     * @param room 房间号
+     * @param username 点歌用户
+     */
+    private void handleRequestSong(JSONObject jsonMessage, String room, String username) {
+        try {
+            // 获取点歌信息
+            JSONObject songInfo = jsonMessage.getJSONObject("song");
+
+            // 创建系统消息
+            Message systemMsg = new Message();
+            systemMsg.setType("portalMsg");
+            systemMsg.setMsg("【点歌消息】用户 " + username + " 点播了歌曲《" + songInfo.getString("name") + "》");
+
+            // 广播点歌消息
+            sendAllMessage(JSON.toJSONString(systemMsg), room);
+
+            // 广播歌曲信息给所有用户，让他们更新点歌列表
+            jsonMessage.put("requester", username); // 添加点歌人信息
+            sendAllMessage(JSON.toJSONString(jsonMessage), room);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
 
     /**
      * WebSocket 错误事件
