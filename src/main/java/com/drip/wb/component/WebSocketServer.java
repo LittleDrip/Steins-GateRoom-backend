@@ -23,9 +23,8 @@ public class WebSocketServer {
     /**
      * 存储各个房间的 sessionMap  第一个string是房间id，第二个map是用户类和session
      */
-    public static final Map<String, Map<User, Session>> rooms = new ConcurrentHashMap<>();
+    public  static  final Map<String, Map<User, Session>> rooms = new ConcurrentHashMap<>();
     private static final Map<Session, Long> heartbeatTracker = new ConcurrentHashMap<>();
-    private static final long HEARTBEAT_TIMEOUT = 15000; // 心跳超时时间，15秒
 
     /***
      * WebSocket 建立连接事件
